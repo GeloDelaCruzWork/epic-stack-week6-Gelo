@@ -1,0 +1,2188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["admin", "audit", "benefits", "catalog", "hr", "ops", "org", "payroll", "timekeeper", "workflow"]
+}
+
+/// ---------------- ADMIN ----------------
+
+// Update existing ClockEvent model
+model User {
+  id            String       @id @default(uuid())
+  company_id    String
+  email         String       @unique
+  password_hash String
+  display_name  String
+  is_active     Boolean      @default(true)
+  username      String       @unique
+  name          String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  connections   Connection[]
+  notes         Note[]
+  passkey       Passkey[]
+  password      Password?
+  sessions      Session[]
+  image         UserImage?
+  roles         Role[]       @relation("RoleToUser")
+
+  @@schema("admin")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  code        String       @unique
+  name        String
+  description String       @default("")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  permissions Permission[] @relation("PermissionToRole")
+  users       User[]       @relation("RoleToUser")
+
+  @@schema("admin")
+}
+
+model Feature {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  name        String
+  description String?
+
+  @@schema("admin")
+}
+
+model UserRole {
+  id      String @id @default(uuid())
+  user_id String
+  role_id String
+
+  @@unique([user_id, role_id])
+  @@schema("admin")
+}
+
+model RoleFeature {
+  id         String @id @default(uuid())
+  role_id    String
+  feature_id String
+
+  @@unique([role_id, feature_id])
+  @@schema("admin")
+}
+
+model Password {
+  hash   String
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("admin")
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  expirationDate DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@schema("admin")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  action      String
+  entity      String
+  access      String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  roles       Role[]   @relation("PermissionToRole")
+
+  @@unique([action, entity, access])
+  @@schema("admin")
+}
+
+model Verification {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  /// The type of verification, e.g. "email" or "phone"
+  type      String
+  /// The thing we're trying to verify, e.g. a user's email or phone number
+  target    String
+  /// The secret key used to generate the otp
+  secret    String
+  /// The algorithm used to generate the otp
+  algorithm String
+  /// The number of digits in the otp
+  digits    Int
+  /// The number of seconds the otp is valid for
+  period    Int
+  /// The valid characters for the otp
+  charSet   String
+  /// When it's safe to delete this verification
+  expiresAt DateTime?
+
+  @@unique([target, type])
+  @@schema("admin")
+}
+
+model Connection {
+  id           String   @id @default(cuid())
+  providerName String
+  providerId   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerName, providerId])
+  @@schema("admin")
+}
+
+model Passkey {
+  id             String   @id
+  aaguid         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  publicKey      Bytes
+  userId         String
+  webauthnUserId String
+  counter        BigInt
+  deviceType     String
+  backedUp       Boolean
+  transports     String?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@schema("admin")
+}
+
+/// ---------------- ORG ----------------
+model Company {
+  id         String   @id @default(uuid())
+  legal_name String
+  code       String   @unique
+  tin        String?
+  address    String?
+  status     String
+  created_at DateTime @default(now())
+
+  @@schema("org")
+}
+
+model Area {
+  id         String @id @default(uuid())
+  company_id String
+  name       String
+  code       String
+
+  @@unique([company_id, code])
+  @@schema("org")
+}
+
+model Subarea {
+  id         String  @id @default(uuid())
+  company_id String
+  area_id    String?
+  name       String?
+  code       String?
+
+  @@index([company_id, area_id])
+  @@schema("org")
+}
+
+model Location {
+  id         String  @id @default(uuid())
+  company_id String
+  area_id    String
+  subarea_id String?
+  name       String
+  code       String
+  address    String?
+  assignments EmployeeAssignment[]
+
+  @@unique([company_id, code])
+  @@index([company_id, area_id, subarea_id])
+  @@schema("org")
+}
+
+/// ---------------- HR ----------------
+
+model EmployeeAssignment {
+  id              String @id @default(uuid())
+  company_id      String
+  employee_id     String
+  employee        Employee @relation(fields: [employee_id], references: [id])
+  assignment_type String // LOCATION, DEPARTMENT, PROJECT, CLIENT
+  isPrimary      Boolean @default(false)
+  remarks        String?
+
+  // Flexible reference fields
+  location_id   String?
+  location      Location? @relation(fields: [location_id], references: [id])
+  department_id String?
+  department    Department? @relation(fields: [department_id], references: [id])
+  project_id    String? // For project-based
+  client_id     String? // For consultants
+
+  position_id String?
+  position    Position? @relation(fields: [position_id], references: [id])
+  shift_id    String?
+  shift       Shift?    @relation(fields: [shift_id], references: [id])
+
+  effective_from DateTime
+  effective_to   DateTime?
+
+  @@index([company_id, employee_id, effective_from])
+  @@schema("hr")
+}
+
+model GuardQualification {
+  id          String  @id @default(uuid())
+  company_id  String
+  guard_id    String
+  position_id String
+  notes       String?
+
+  @@unique([company_id, guard_id, position_id])
+  @@index([company_id, position_id])
+  @@schema("hr")
+}
+
+/// ---------------- CATALOG ----------------
+model Position {
+  id         String @id @default(uuid())
+  company_id String
+  code       String
+  name       String
+  assignments EmployeeAssignment[]
+
+  @@unique([company_id, code])
+  @@schema("catalog")
+}
+
+model Shift {
+  id          String  @id @default(uuid())
+  company_id  String
+  code        String
+  name        String
+  start_time  String
+  end_time    String
+  night_start String?
+  night_end   String?
+  assignments EmployeeAssignment[]
+
+  @@unique([company_id, code])
+  @@schema("catalog")
+}
+
+model ContractRate {
+  id                    String    @id @default(uuid())
+  company_id            String
+  location_id           String
+  position_id           String
+  shift_id              String
+  base_monthly_rate     Decimal   @db.Decimal(14, 2)
+  ot_multiplier         Decimal   @default(1.25) @db.Decimal(6, 4)
+  night_diff_multiplier Decimal   @default(1.10) @db.Decimal(6, 4)
+  effective_from        DateTime
+  effective_to          DateTime?
+  last_approval_id      String?
+
+  @@index([company_id, location_id, position_id, shift_id, effective_from, effective_to])
+  @@schema("catalog")
+}
+
+model LoanType {
+  id         String @id @default(uuid())
+  company_id String
+  code       String
+  name       String
+
+  @@unique([company_id, code])
+  @@schema("catalog")
+}
+
+model AllowanceType {
+  id         String @id @default(uuid())
+  company_id String
+  code       String
+  name       String
+
+  @@unique([company_id, code])
+  @@schema("catalog")
+}
+
+model DeductionType {
+  id         String @id @default(uuid())
+  company_id String
+  code       String
+  name       String
+
+  @@unique([company_id, code])
+  @@schema("catalog")
+}
+
+model GovTableSSS {
+  id              String    @id @default(uuid())
+  ord             Int       @default(0)
+  range1          Float     @default(0.00)
+  range2          Float     @default(0.00)
+  msc             Float     @default(0.00)
+  rate            Float     @default(0.00)
+  employerContrib Float     @default(0.00)
+  employeeContrib Float     @default(0.00)
+  effective_from  DateTime
+  effective_to    DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@index([effective_from, effective_to])
+  @@schema("catalog")
+}
+
+model GovTablePhilHealth {
+  id              String    @id @default(uuid())
+  ord             Int       @default(0)
+  min             Float     @default(0.00)
+  max             Float     @default(0.00)
+  rate            Float     @default(0.00)
+  employerContrib Float     @default(0.00)
+  employeeContrib Float     @default(0.00)
+  effective_from  DateTime
+  effective_to    DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@index([effective_from, effective_to])
+  @@schema("catalog")
+}
+
+model GovTableHDMF {
+  id              String    @id @default(uuid())
+  ord             Int       @default(0)
+  min             Float     @default(0.00)
+  max             Float     @default(0.00)
+  reference       Float     @default(0.00)
+  employerRate    Float     @default(0.00)
+  employeeRate    Float     @default(0.00)
+  employerContrib Float     @default(0.00)
+  effective_from  DateTime
+  effective_to    DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@index([effective_from, effective_to])
+  @@schema("catalog")
+}
+
+model GovTableBIR {
+  id             String    @id @default(uuid())
+  bracket        Int       @default(0)
+  period_type    String    @default("MONTHLY") // DAILY, WEEKLY, SEMI_MONTHLY, MONTHLY
+  min            Float     @default(0.00)
+  max            Float     @default(0.00)
+  fixedTax       Float     @default(0.00)
+  rateOnExcess   Float     @default(0.00)
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+  effective_from DateTime
+  effective_to   DateTime?
+
+  @@index([effective_from, effective_to])
+  @@index([period_type])
+  @@schema("catalog")
+}
+
+model WorkCalendarMonth {
+  id            String  @id @default(uuid())
+  company_id    String
+  year          Int
+  month         Int
+  working_days  Int
+  hours_per_day Int
+  notes         String?
+
+  @@unique([company_id, year, month])
+  @@schema("catalog")
+}
+
+/// ---------------- OPS ----------------
+
+model PayPeriod {
+  id         String   @id @default(uuid())
+  company_id String
+  code       String
+  year       Int
+  month      Int
+  from       Int
+  to         Int
+  start_date DateTime
+  end_date   DateTime
+  status     String
+
+  // Relations
+  manualClockEventHeaders ManualClockEventHeader[]
+
+  @@unique([company_id, code])
+  @@schema("ops")
+}
+
+model WorkSchedule {
+  id               String   @id @default(uuid())
+  company_id       String
+  pay_period_id    String
+  date             DateTime
+  location_id      String
+  position_id      String
+  shift_id         String
+  guard_id         String
+  status           String
+  created_at       DateTime @default(now())
+  last_approval_id String?
+
+  @@index([company_id, pay_period_id, date, guard_id])
+  @@schema("ops")
+}
+
+model RelieverSchedule {
+  id               String   @id @default(uuid())
+  company_id       String
+  work_schedule_id String?
+  guard_id         String
+  status           String
+  created_at       DateTime @default(now())
+  last_approval_id String?
+
+  @@index([company_id, guard_id])
+  @@schema("ops")
+}
+
+model Device {
+  id           String    @id @default(uuid())
+  company_id   String
+  type         String
+  serial_no    String
+  label        String?
+  location_id  String?
+  last_seen_at DateTime?
+
+  @@unique([company_id, serial_no])
+  @@schema("ops")
+}
+
+model ClockEvent {
+  id               String   @id @default(uuid())
+  company_id       String
+  pay_period_id    String
+  guard_id         String?
+  location_id      String?
+  device_id        String?
+  occurred_at      DateTime
+  kind             String
+  raw_payload      Json?
+  resolved_status  String
+  created_at       DateTime @default(now())
+  last_approval_id String?
+
+  manual_detail_id String?
+  manual_detail    ManualClockEventDetail? @relation(fields: [manual_detail_id], references: [id])
+
+  @@index([company_id, occurred_at])
+  @@index([company_id, pay_period_id, guard_id])
+  @@schema("ops")
+}
+
+// model RelieverPreference {
+//   id          String  @id @default(uuid())
+//   company_id  String
+//   location_id String
+//   shift_id    String
+//   guard_id    String
+//   weight      Int     @default(0)
+//   notes       String?
+
+//   @@unique([company_id, location_id, shift_id, guard_id])
+//   @@index([company_id, location_id, shift_id])
+//   @@schema("ops")
+// }
+
+// model RelieverPool {
+//   id           String   @id @default(uuid())
+//   company_id   String
+//   date         DateTime
+//   location_id  String
+//   shift_id     String
+//   position_id  String
+//   generated_at DateTime @default(now())
+//   generated_by String?
+//   status       String   @default("READY")
+//   notes        String?
+
+//   @@unique([company_id, date, location_id, shift_id, position_id])
+//   @@index([company_id, date])
+//   @@schema("ops")
+// }
+
+// model RelieverPoolCandidate {
+//   id          String   @id @default(uuid())
+//   company_id  String
+//   pool_id     String
+//   guard_id    String
+//   score       Int      @default(0)
+//   reason_tags String[]
+//   conflicts   Json?
+//   pinned      Boolean  @default(false)
+//   banned      Boolean  @default(false)
+//   created_at  DateTime @default(now())
+
+//   @@unique([pool_id, guard_id])
+//   @@index([company_id, pool_id, score])
+//   @@schema("ops")
+// }
+
+// model AttendanceUpload {
+//   id                String   @id @default(uuid())
+//   company_id        String
+//   file_name         String
+//   file_bytes_sha256 String
+//   storage_url       String
+//   received_at       DateTime @default(now())
+//   received_by       String
+//   parsed            Boolean  @default(false)
+//   batch_id          String?
+//   notes             String?
+//   last_approval_id  String?
+
+//   @@index([company_id, received_at])
+//   @@schema("ops")
+// }
+
+// model AttendanceUploadRow {
+//   id          String   @id @default(uuid())
+//   upload_id   String
+//   row_no      Int
+//   raw_json    Json
+//   parsed_json Json?
+//   errors      Json?
+//   created_at  DateTime @default(now())
+
+//   @@index([upload_id, row_no])
+//   @@schema("ops")
+// }
+
+// model AttendanceBatch {
+//   id               String    @id @default(uuid())
+//   company_id       String
+//   pay_period_id    String
+//   date_from        DateTime
+//   date_to          DateTime
+//   title            String
+//   notes            String?
+//   status           String    @default("DRAFT")
+//   created_by       String
+//   created_at       DateTime  @default(now())
+//   submitted_at     DateTime?
+//   verified_by      String?
+//   verified_at      DateTime?
+//   approved_by      String?
+//   approved_at      DateTime?
+//   applied_at       DateTime?
+//   rejected_by      String?
+//   rejected_at      DateTime?
+//   last_approval_id String?
+
+//   @@index([company_id, pay_period_id, status])
+//   @@schema("ops")
+// }
+
+// model AttendanceBatchLine {
+//   id                   String    @id @default(uuid())
+//   company_id           String
+//   batch_id             String
+//   date                 DateTime
+//   location_id          String
+//   shift_id             String
+//   position_id          String
+//   scheduled_guard_id   String?
+//   reliever_guard_id    String?
+//   effective_guard_id   String?
+//   time_in              DateTime?
+//   time_out             DateTime?
+//   break_in             DateTime?
+//   break_out            DateTime?
+//   work_schedule_id     String?
+//   reliever_schedule_id String?
+//   status               String    @default("PENDING")
+//   issues               Json?
+//   notes                String?
+//   created_at           DateTime  @default(now())
+//   last_approval_id     String?
+
+//   @@index([company_id, batch_id, date])
+//   @@schema("ops")
+// }
+
+/// ---------------- TIMEKEEPER ----------------
+enum ManualUploadStatus {
+  DRAFT // Initial upload, not yet verified
+  VERIFIED // Verified by supervisor
+  APPROVED // Approved for processing
+  PROCESSING // Currently being processed
+  COMPLETED // Successfully processed
+  FAILED // Processing failed
+  CANCELLED // Upload cancelled
+
+  @@schema("timekeeper")
+}
+
+enum ClockMode {
+  IN
+  OUT
+
+  @@schema("timekeeper")
+}
+
+model ManualClockEventHeader {
+  id         String @id @default(uuid())
+  company_id String
+
+  // Upload metadata
+  filename    String
+  upload_date DateTime @default(now())
+  file_size   Int
+
+  // Personnel tracking
+  prepared_by  String
+  verified_by  String?
+  approved_by  String?
+  submitted_by String
+
+  // Period information
+  pay_period_id String
+  pay_period    PayPeriod @relation(fields: [pay_period_id], references: [id])
+  date_sent     DateTime?
+
+  // Processing status
+  status         ManualUploadStatus @default(DRAFT)
+  processed_date DateTime?
+  processed_by   String?
+
+  // Validation results
+  total_records Int     @default(0)
+  valid_records Int     @default(0)
+  error_records Int     @default(0)
+  warnings      String? // JSON array of warnings
+
+  // Relations
+  details ManualClockEventDetail[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([company_id, pay_period_id])
+  @@index([status])
+  @@index([upload_date])
+  @@schema("timekeeper")
+}
+
+model ManualClockEventDetail {
+  id        String                 @id @default(uuid())
+  header_id String
+  header    ManualClockEventHeader @relation(fields: [header_id], references: [id], onDelete: Cascade)
+
+  // Excel row reference
+  row_number Int
+
+  // Employee information
+  employee_no String
+  last_name   String
+  first_name  String
+  middle_name String?
+
+  // Clock event details
+  location        String
+  shift           String
+  event_date      DateTime
+  event_time      String // Original time string from Excel
+  event_timestamp DateTime // Parsed full timestamp
+  event_mode      ClockMode // IN or OUT
+
+  // Validation status
+  is_valid          Boolean @default(true)
+  validation_errors String? // JSON array of errors
+
+  // Processing status
+  is_processed   Boolean @default(false)
+  clock_event_id String? // Reference to created ClockEvent
+
+  // Relations
+  clockEvents ClockEvent[]
+
+  created_at DateTime @default(now())
+
+  @@index([header_id])
+  @@index([employee_no])
+  @@index([is_valid])
+  @@index([is_processed])
+  @@schema("timekeeper")
+}
+
+model TimeLog {
+  id                   String    @id @default(uuid())
+  company_id           String
+  pay_period_id        String
+  date                 DateTime
+  guard_id             String
+  location_id          String
+  position_id          String
+  shift_id             String
+  work_schedule_id     String?
+  reliever_schedule_id String?
+  clock_in_event_id    String?
+  clock_out_event_id   String?
+  status               String
+  created_at           DateTime  @default(now())
+  last_approval_id     String?
+  time_in              DateTime?
+  time_out             DateTime?
+
+  @@index([company_id, pay_period_id, guard_id, date])
+  @@schema("timekeeper")
+}
+
+model Dtr {
+  id                       String   @id @default(uuid())
+  company_id               String
+  pay_period_id            String
+  guard_id                 String
+  location_id              String
+  position_id              String
+  shift_id                 String
+  date                     DateTime
+  time_log_ids             String[]
+  status                   String
+  created_at               DateTime @default(now())
+  last_approval_id         String?
+  hours_8h                 Decimal? @default(0.00) @db.Decimal(8, 2)
+  hours_ot                 Decimal? @default(0.00) @db.Decimal(8, 2)
+  hours_night              Decimal? @default(0.00) @db.Decimal(8, 2)
+  contract_rate_version_id String?
+
+  @@unique([company_id, guard_id, date, shift_id])
+  @@schema("timekeeper")
+}
+
+model EmployeeTimesheet {
+  id            String @id @default(uuid())
+  company_id    String
+  pay_period_id String
+  employee_id   String
+
+  // Different tracking methods
+  tracking_method String // TIME_LOG, FIXED_HOURS, NO_TRACKING
+
+  dtr_ids String[]
+
+  // For time-based employees
+  total_hours_regular Decimal? @db.Decimal(8, 2)
+  total_hours_ot      Decimal? @db.Decimal(8, 2)
+  total_hours_night   Decimal? @db.Decimal(8, 2)
+  total_hours_holiday Decimal? @db.Decimal(8, 2)
+
+  // For fixed/no-tracking employees
+  days_worked Int?
+  days_absent Int?
+  days_leave  Int?
+
+  status     String
+  created_at DateTime @default(now())
+
+  @@unique([company_id, pay_period_id, employee_id])
+  @@schema("timekeeper")
+}
+
+/// ---------------- NEW EMPLOYEE-CENTRIC MODELS ----------------
+/// These models implement the employee-centric payroll system
+/// while maintaining backward compatibility with the guard-centric models
+
+// Employee types enum
+enum EmployeeType {
+  REGULAR // Full-time regular employees
+  CONTRACTUAL // Fixed-term contract
+  PROBATIONARY // On probation period
+  PROJECT // Project-based
+  CONSULTANT // Independent consultants
+  PART_TIME // Part-time workers
+  INTERN // Interns/OJT
+
+  @@schema("hr")
+}
+
+// Employment status enum
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+  RESIGNED
+  RETIRED
+  ON_LEAVE
+  SUSPENDED
+
+  @@schema("hr")
+}
+
+// Compensation type enum
+enum CompensationType {
+  TIME_BASED // Uses timesheets (guards, hourly workers)
+  FIXED_SALARY // Fixed monthly salary
+  PROJECT_BASED // Per project payment
+  COMMISSION // Commission-based
+  HYBRID // Combination
+
+  @@schema("hr")
+}
+
+// Core Employee model replacing Guard
+model Employee {
+  id             String       @id @default(uuid())
+  company_id     String
+  employee_no    String // Universal employee number
+  employee_type  EmployeeType @default(REGULAR)
+  classification String? // GUARD, ADMIN, CONSULTANT, etc.
+
+  // Personal Information
+  last_name   String
+  first_name  String
+  middle_name String?
+  suffix      String?
+  email       String?
+
+  // Employment Details
+  hire_date           DateTime
+  regularization_date DateTime? // For probationary to regular
+  separation_date     DateTime?
+  employment_status   EmploymentStatus @default(ACTIVE)
+
+  // Compensation Setup
+  compensation_type  CompensationType @default(TIME_BASED)
+  pay_frequency      String? // DAILY, WEEKLY, SEMI_MONTHLY, MONTHLY
+  requires_timesheet Boolean          @default(true)
+  base_salary        Decimal?         @db.Decimal(14, 2)
+  hourly_rate        Decimal?         @db.Decimal(14, 2)
+  daily_rate         Decimal?         @db.Decimal(14, 2)
+
+  // Department/Assignment
+  department_id  String?
+  cost_center_id String?
+  reports_to     String? // Manager's employee_id
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  guard_profile   GuardProfile? // Optional, only for guards
+  regular_profile RegularEmployeeProfile? // Optional, for regular employees
+  assignments     EmployeeAssignment[]
+
+  @@unique([company_id, employee_no])
+  @@index([company_id, employment_status])
+  @@index([company_id, employee_type])
+  @@schema("hr")
+}
+
+// Keep guard-specific data separate
+model GuardProfile {
+  id          String   @id @default(uuid())
+  employee_id String   @unique
+  employee    Employee @relation(fields: [employee_id], references: [id])
+
+  // Guard-specific fields
+  license_no         String?
+  license_expiry     DateTime?
+  security_clearance String?
+
+  @@schema("hr")
+}
+
+model RegularEmployeeProfile {
+  id          String   @id @default(uuid())
+  employee_id String   @unique
+  employee    Employee @relation(fields: [employee_id], references: [id])
+
+  // Regular employee specific fields
+  department    String?
+  job_level     String?
+  direct_report String? // supervisor employee_id
+
+  @@schema("hr")
+}
+
+// Department structure for non-guard employees
+model Department {
+  id         String  @id @default(uuid())
+  company_id String
+  code       String
+  name       String
+  parent_id  String? // For hierarchical departments
+  manager_id String? // Employee ID of department head
+  assignments EmployeeAssignment[]
+
+  @@unique([company_id, code])
+  @@schema("hr")
+}
+
+// Cost Centers for financial allocation
+model CostCenter {
+  id         String  @id @default(uuid())
+  company_id String
+  code       String
+  name       String
+  type       String // OPERATIONS, ADMIN, SALES, etc.
+  active     Boolean @default(true)
+
+  @@unique([company_id, code])
+  @@schema("hr")
+}
+
+// Employment Contract details
+model EmploymentContract {
+  id                 String    @id @default(uuid())
+  company_id         String
+  employee_id        String
+  contract_type      String // PERMANENT, FIXED_TERM, PROJECT
+  start_date         DateTime
+  end_date           DateTime?
+  probation_end_date DateTime?
+  notice_period_days Int?
+
+  // Compensation details
+  base_salary     Decimal? @db.Decimal(14, 2)
+  allowances_json Json? // Structured allowances
+  benefits_json   Json? // Benefits package
+
+  status     String   @default("ACTIVE")
+  created_at DateTime @default(now())
+
+  @@index([company_id, employee_id])
+  @@schema("hr")
+}
+
+/// ---------------- GENERALIZED BENEFITS MODELS ----------------
+
+// Generalized Employee Loans (replacing GuardLoan conceptually)
+model EmployeeLoan {
+  id                  String    @id @default(uuid())
+  company_id          String
+  employee_id         String // References Employee instead of Guard
+  loan_type_id        String
+  principal_amount    Decimal   @db.Decimal(14, 2)
+  interest_rate       Decimal?  @db.Decimal(5, 2)
+  installment_count   Int
+  installment_amount  Decimal   @db.Decimal(14, 2)
+  start_pay_period_id String
+  status              String    @default("ACTIVE")
+  approval_date       DateTime?
+  completion_date     DateTime?
+  created_at          DateTime  @default(now())
+
+  @@index([company_id, employee_id])
+  @@schema("benefits")
+}
+
+// Generalized Employee Allowances
+model EmployeeAllowance {
+  id                  String   @id @default(uuid())
+  company_id          String
+  employee_id         String
+  allowance_type_id   String
+  amount              Decimal  @db.Decimal(14, 2)
+  frequency           String // MONTHLY, PER_CUTOFF, ONE_TIME
+  taxable             Boolean  @default(true)
+  start_pay_period_id String
+  end_pay_period_id   String?
+  status              String   @default("ACTIVE")
+  created_at          DateTime @default(now())
+
+  @@index([company_id, employee_id])
+  @@schema("benefits")
+}
+
+// Generalized Employee Deductions
+model EmployeeDeduction {
+  id                  String   @id @default(uuid())
+  company_id          String
+  employee_id         String
+  deduction_type_id   String
+  amount              Decimal  @db.Decimal(14, 2)
+  frequency           String // MONTHLY, PER_CUTOFF, ONE_TIME
+  start_pay_period_id String
+  end_pay_period_id   String?
+  status              String   @default("ACTIVE")
+  created_at          DateTime @default(now())
+
+  @@index([company_id, employee_id])
+  @@schema("benefits")
+}
+
+// Government Contributions - Generalized
+model EmployeeGovContribution {
+  id                String @id @default(uuid())
+  company_id        String
+  employee_id       String
+  contribution_type String // SSS, PHILHEALTH, PAGIBIG, TIN
+  account_number    String
+  status            String @default("ACTIVE")
+
+  // Flexible fields for different contribution types
+  employer_share Decimal? @db.Decimal(14, 2)
+  employee_share Decimal? @db.Decimal(14, 2)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, employee_id, contribution_type])
+  @@index([employee_id])
+  @@schema("benefits")
+}
+
+// Employee Loan Payment Schedule
+model EmployeeLoanSchedule {
+  id               String    @id @default(uuid())
+  company_id       String
+  employee_loan_id String
+  pay_period_id    String
+  amount           Decimal   @db.Decimal(14, 2)
+  status           String    @default("PENDING")
+  processed_at     DateTime?
+
+  @@unique([company_id, employee_loan_id, pay_period_id])
+  @@schema("benefits")
+}
+
+// Employee Allowance Schedule
+model EmployeeAllowanceSchedule {
+  id                    String    @id @default(uuid())
+  company_id            String
+  employee_allowance_id String
+  pay_period_id         String
+  amount                Decimal   @db.Decimal(14, 2)
+  status                String    @default("PENDING")
+  processed_at          DateTime?
+
+  @@unique([company_id, employee_allowance_id, pay_period_id])
+  @@schema("benefits")
+}
+
+// Employee Deduction Schedule
+model EmployeeDeductionSchedule {
+  id                    String    @id @default(uuid())
+  company_id            String
+  employee_deduction_id String
+  pay_period_id         String
+  amount                Decimal   @db.Decimal(14, 2)
+  status                String    @default("PENDING")
+  processed_at          DateTime?
+
+  @@unique([company_id, employee_deduction_id, pay_period_id])
+  @@schema("benefits")
+}
+
+/// ---------------- NEW PAYROLL MODELS ----------------
+
+// Master Payroll Run
+model PayrollRun {
+  id            String @id @default(uuid())
+  company_id    String
+  pay_period_id String
+  payroll_type  String // REGULAR, SPECIAL, 13TH_MONTH, BONUS
+  status        String @default("DRAFT")
+
+  // Processing stages
+  created_at  DateTime  @default(now())
+  computed_at DateTime?
+  reviewed_at DateTime?
+  approved_at DateTime?
+  posted_at   DateTime?
+
+  // Approval workflow
+  created_by  String
+  reviewed_by String?
+  approved_by String?
+
+  @@unique([company_id, pay_period_id, payroll_type])
+  @@schema("payroll")
+}
+
+// Individual Employee Payslip (more comprehensive than Paysheet)
+model EmployeePayslip {
+  id             String @id @default(uuid())
+  company_id     String
+  payroll_run_id String
+  employee_id    String
+
+  // Earnings
+  basic_pay      Decimal @db.Decimal(14, 2)
+  overtime_pay   Decimal @default(0) @db.Decimal(14, 2)
+  night_diff_pay Decimal @default(0) @db.Decimal(14, 2)
+  holiday_pay    Decimal @default(0) @db.Decimal(14, 2)
+
+  // Allowances (summarized)
+  allowances_total  Decimal @default(0) @db.Decimal(14, 2)
+  allowances_detail Json? // Breakdown of allowances
+
+  // Deductions
+  absences_amount  Decimal @default(0) @db.Decimal(14, 2)
+  tardiness_amount Decimal @default(0) @db.Decimal(14, 2)
+  loans_total      Decimal @default(0) @db.Decimal(14, 2)
+  other_deductions Decimal @default(0) @db.Decimal(14, 2)
+
+  // Government Contributions
+  sss_ee        Decimal @default(0) @db.Decimal(14, 2)
+  sss_er        Decimal @default(0) @db.Decimal(14, 2)
+  philhealth_ee Decimal @default(0) @db.Decimal(14, 2)
+  philhealth_er Decimal @default(0) @db.Decimal(14, 2)
+  hdmf_ee       Decimal @default(0) @db.Decimal(14, 2)
+  hdmf_er       Decimal @default(0) @db.Decimal(14, 2)
+
+  // Tax
+  taxable_income  Decimal @db.Decimal(14, 2)
+  withholding_tax Decimal @default(0) @db.Decimal(14, 2)
+
+  // Totals
+  gross_pay        Decimal @db.Decimal(14, 2)
+  total_deductions Decimal @db.Decimal(14, 2)
+  net_pay          Decimal @db.Decimal(14, 2)
+
+  status     String   @default("DRAFT")
+  created_at DateTime @default(now())
+
+  @@unique([company_id, payroll_run_id, employee_id])
+  @@schema("payroll")
+}
+
+// Compensation Plans for different employee types
+model CompensationPlan {
+  id            String @id @default(uuid())
+  company_id    String
+  code          String
+  name          String
+  employee_type String // Links to EmployeeType
+
+  // Base compensation structure
+  base_calculation     String // MONTHLY, DAILY, HOURLY, PROJECT
+  overtime_eligible    Boolean @default(false)
+  night_diff_eligible  Boolean @default(false)
+  holiday_pay_eligible Boolean @default(true)
+
+  // Benefits eligibility
+  sss_eligible        Boolean @default(true)
+  philhealth_eligible Boolean @default(true)
+  hdmf_eligible       Boolean @default(true)
+  tax_eligible        Boolean @default(true)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([company_id, code])
+  @@schema("payroll")
+}
+
+model DtrCost {
+  id                       String   @id @default(uuid())
+  company_id               String
+  dtr_id                   String   @unique
+  contract_rate_version_id String
+  calendar_year            Int
+  calendar_month           Int
+  working_days_used        Int
+  hours_per_day_used       Int
+  derived_hourly_base      Decimal  @db.Decimal(14, 4)
+  derived_hourly_ot        Decimal  @db.Decimal(14, 4)
+  derived_hourly_night     Decimal  @db.Decimal(14, 4)
+  amount_8h                Decimal  @db.Decimal(14, 2)
+  amount_ot                Decimal  @db.Decimal(14, 2)
+  amount_night             Decimal  @db.Decimal(14, 2)
+  currency                 String   @default("PHP")
+  computed_at              DateTime @default(now())
+  notes                    String?
+  last_approval_id         String?
+
+  @@index([company_id, calendar_year, calendar_month])
+  @@schema("payroll")
+}
+
+model TimesheetCost {
+  id               String   @id @default(uuid())
+  company_id       String
+  timesheet_id     String   @unique
+  amount_8h        Decimal  @db.Decimal(14, 2)
+  amount_ot        Decimal  @db.Decimal(14, 2)
+  amount_night     Decimal  @db.Decimal(14, 2)
+  currency         String   @default("PHP")
+  computed_at      DateTime @default(now())
+  notes            String?
+  last_approval_id String?
+
+  @@index([company_id, computed_at])
+  @@schema("payroll")
+}
+
+model EmployeePaysheet {
+  id            String @id @default(uuid())
+  company_id    String
+  pay_period_id String
+  employee_id   String
+  employee_type String // Denormalized for easier processing
+
+  timesheet_ids String[]
+  amount_8h     Decimal  @db.Decimal(14, 2)
+  amount_ot     Decimal  @db.Decimal(14, 2)
+  amount_night  Decimal  @db.Decimal(14, 2)
+
+  // Earnings (flexible based on employee type)
+  basic_pay      Decimal  @db.Decimal(14, 2)
+  overtime_pay   Decimal? @db.Decimal(14, 2)
+  night_diff_pay Decimal? @db.Decimal(14, 2)
+  holiday_pay    Decimal? @db.Decimal(14, 2)
+
+  // Common allowances
+  allowances_amount Decimal @default(0) @db.Decimal(14, 2)
+
+  // Deductions
+  loans_amount      Decimal @default(0) @db.Decimal(14, 2)
+  deductions_amount Decimal @default(0) @db.Decimal(14, 2)
+
+  // Government contributions
+  sss_ee        Decimal @default(0) @db.Decimal(14, 2)
+  sss_er        Decimal @default(0) @db.Decimal(14, 2)
+  philhealth_ee Decimal @default(0) @db.Decimal(14, 2)
+  philhealth_er Decimal @default(0) @db.Decimal(14, 2)
+  hdmf_ee       Decimal @default(0) @db.Decimal(14, 2)
+  hdmf_er       Decimal @default(0) @db.Decimal(14, 2)
+  tax_withheld  Decimal @default(0) @db.Decimal(14, 2)
+
+  // Totals
+  gross_pay Decimal @db.Decimal(14, 2)
+  net_pay   Decimal @db.Decimal(14, 2)
+
+  status     String
+  created_at DateTime @default(now())
+
+  @@unique([company_id, pay_period_id, employee_id])
+  @@schema("payroll")
+}
+
+model Payslip {
+  id           String   @id @default(uuid())
+  company_id   String
+  paysheet_id  String   @unique
+  generated_at DateTime @default(now())
+  pdf_url      String?
+
+  @@schema("payroll")
+}
+
+/// ---------------- AUDIT ----------------
+model ChangeLog {
+  id                String   @id @default(uuid())
+  company_id        String
+  actor_user_id     String?
+  actor_source      String?
+  schema_name       String
+  table_name        String
+  entity_id         String
+  action            String
+  before_data       Json?
+  after_data        Json?
+  reason            String?
+  request_id        String?
+  occurred_at       DateTime @default(now())
+  prev_hash         String?
+  curr_hash         String?
+  approval_id       String?
+  requester_user_id String?
+  verifier_user_id  String?
+  approver_user_id  String?
+
+  @@index([company_id, schema_name, table_name, entity_id, occurred_at])
+  @@index([approval_id])
+  @@schema("audit")
+}
+
+/// ---------------- WORKFLOW ----------------
+model Approval {
+  id                String    @id @default(uuid())
+  company_id        String
+  schema_name       String
+  table_name        String
+  entity_id         String
+  action            String
+  requester_user_id String
+  verifier_user_id  String?
+  approver_user_id  String?
+  status            String
+  reason            String?
+  requested_at      DateTime  @default(now())
+  verified_at       DateTime?
+  approved_at       DateTime?
+  rejected_at       DateTime?
+  before_data       Json?
+  proposed_after    Json?
+  diff_hint         Json?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@index([company_id, schema_name, table_name, entity_id])
+  @@index([company_id, status, requested_at])
+  @@schema("workflow")
+}
+
+model ApprovalPolicy {
+  id               String  @id @default(uuid())
+  company_id       String
+  schema_name      String
+  table_name       String
+  action           String
+  enforced         Boolean @default(true)
+  require_verifier Boolean @default(true)
+  require_approver Boolean @default(true)
+  notes            String?
+
+  @@unique([company_id, schema_name, table_name, action])
+  @@schema("workflow")
+}
+
+//-------------- Admin (old)------------------
+model Note {
+  id        String      @id @default(cuid())
+  title     String
+  content   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  ownerId   String
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  images    NoteImage[]
+
+  @@index([ownerId])
+  @@index([ownerId, updatedAt])
+  @@schema("admin")
+}
+
+model NoteImage {
+  id        String   @id @default(cuid())
+  altText   String?
+  objectKey String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@schema("admin")
+}
+
+model UserImage {
+  id        String   @id @default(cuid())
+  altText   String?
+  objectKey String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("admin")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@schema("admin")
+}
+
+model Timesheet_ {
+  id                String   @id @default(cuid())
+  employeeName      String
+  payPeriod         String
+  detachment        String
+  shift             String
+  regularHours      Float    @default(0)
+  overtimeHours     Float    @default(0)
+  nightDifferential Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  dtrs              DTR_[]
+
+  @@map("timesheet_")
+  @@schema("timekeeper")
+}
+
+model DTR_ {
+  id                String     @id @default(cuid())
+  date              DateTime
+  regularHours      Float      @default(0)
+  overtimeHours     Float      @default(0)
+  nightDifferential Float      @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  timesheetId       String
+  timesheet         Timesheet_ @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  timelogs          Timelog_[]
+
+  @@index([timesheetId])
+  @@map("DTR_")
+  @@schema("timekeeper")
+}
+
+model Timelog_ {
+  id          String        @id @default(cuid())
+  mode        String
+  timestamp   DateTime
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  dtrId       String
+  clockEvents ClockEvent_[]
+  dtr         DTR_          @relation(fields: [dtrId], references: [id], onDelete: Cascade)
+
+  @@index([dtrId])
+  @@map("timelog_")
+  @@schema("timekeeper")
+}
+
+model ClockEvent_ {
+  id        String   @id @default(cuid())
+  clockTime DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  timelogId String
+  timelog   Timelog_ @relation(fields: [timelogId], references: [id], onDelete: Cascade)
+
+  @@index([timelogId])
+  @@map("clockEvent_")
+  @@schema("timekeeper")
+}
+
+model Operation {
+  id             String     @id @default(cuid())
+  name           String
+  description    String?
+  status         String     @default("draft")
+  priority       String     @default("medium")
+  startDate      DateTime?
+  endDate        DateTime?
+  completionRate Float      @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  incidents      Incident[]
+
+  @@index([status])
+  @@index([priority])
+  @@schema("ops")
+}
+
+model Incident {
+  id             String    @id @default(cuid())
+  title          String
+  description    String?
+  type           String
+  severity       String    @default("medium")
+  status         String    @default("reported")
+  reportedBy     String?
+  reportedDate   DateTime  @default(now())
+  resolvedDate   DateTime?
+  responseTime   Int?
+  resolutionTime Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  operationId    String
+  operation      Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  tasks          Task[]
+
+  @@index([operationId])
+  @@index([severity])
+  @@index([status])
+  @@schema("ops")
+}
+
+model Task {
+  id             String     @id @default(cuid())
+  title          String
+  description    String?
+  priority       String     @default("medium")
+  status         String     @default("unassigned")
+  estimatedHours Float?
+  actualHours    Float?
+  dueDate        DateTime?
+  completedDate  DateTime?
+  assignedTo     String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  incidentId     String
+  resources      Resource[]
+  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@index([status])
+  @@index([assignedTo])
+  @@schema("ops")
+}
+
+model Resource {
+  id              String   @id @default(cuid())
+  name            String
+  type            String
+  category        String?
+  status          String   @default("available")
+  skills          String?
+  location        String?
+  cost            Float?
+  quantity        Float    @default(1)
+  utilizationRate Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  taskId          String?
+  task            Task?    @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+  @@index([type])
+  @@index([status])
+  @@schema("ops")
+}
+
+/// ---------------- EMPLOYEE ATTENDANCE & LEAVE MODELS ----------------
+
+// Generalized Work Schedule (for all time-based employees)
+model EmployeeSchedule {
+  id          String   @id @default(uuid())
+  company_id  String
+  employee_id String
+  date        DateTime
+
+  // Location/Assignment (nullable for office workers)
+  location_id   String?
+  department_id String?
+
+  // Schedule details
+  shift_id      String?
+  scheduled_in  DateTime
+  scheduled_out DateTime
+  break_minutes Int      @default(60)
+
+  status     String   @default("SCHEDULED")
+  created_at DateTime @default(now())
+
+  @@unique([company_id, employee_id, date])
+  @@index([company_id, date])
+  @@schema("timekeeper")
+}
+
+// Attendance records for all employees
+model EmployeeAttendance {
+  id          String   @id @default(uuid())
+  company_id  String
+  employee_id String
+  date        DateTime
+
+  // Actual times
+  actual_in   DateTime?
+  actual_out  DateTime?
+  break_start DateTime?
+  break_end   DateTime?
+
+  // Computed values
+  regular_hours    Decimal @default(0) @db.Decimal(8, 2)
+  overtime_hours   Decimal @default(0) @db.Decimal(8, 2)
+  night_diff_hours Decimal @default(0) @db.Decimal(8, 2)
+  tardiness_mins   Int     @default(0)
+  undertime_mins   Int     @default(0)
+
+  // Status and validation
+  attendance_status String // PRESENT, ABSENT, LATE, HALF_DAY, etc.
+  validation_status String  @default("PENDING")
+  remarks           String?
+
+  created_at DateTime @default(now())
+
+  @@unique([company_id, employee_id, date])
+  @@index([company_id, date])
+  @@schema("timekeeper")
+}
+
+// Leave Management
+model EmployeeLeave {
+  id          String   @id @default(uuid())
+  company_id  String
+  employee_id String
+  leave_type  String // VACATION, SICK, EMERGENCY, MATERNITY, etc.
+  start_date  DateTime
+  end_date    DateTime
+  days_count  Decimal  @db.Decimal(5, 2)
+
+  reason          String?
+  supporting_docs Json?
+
+  status      String    @default("PENDING")
+  applied_at  DateTime  @default(now())
+  approved_by String?
+  approved_at DateTime?
+
+  @@index([company_id, employee_id])
+  @@schema("hr")
+}
+
+// Leave Balances
+model EmployeeLeaveBalance {
+  id          String @id @default(uuid())
+  company_id  String
+  employee_id String
+  year        Int
+  leave_type  String
+
+  entitled_days  Decimal @db.Decimal(5, 2)
+  used_days      Decimal @default(0) @db.Decimal(5, 2)
+  remaining_days Decimal @db.Decimal(5, 2)
+
+  @@unique([company_id, employee_id, year, leave_type])
+  @@schema("hr")
+}
+
+// Holiday Calendar
+model Holiday {
+  id         String   @id @default(uuid())
+  company_id String
+  date       DateTime
+  name       String
+  type       String // REGULAR, SPECIAL, COMPANY_SPECIFIC
+  rate       Decimal  @default(1.0) @db.Decimal(3, 2) // 1.0 = 100%, 2.0 = 200%
+
+  @@unique([company_id, date])
+  @@index([company_id, date])
+  @@schema("catalog")
+}
+
+/// ---------------- MIGRATION VIEWS FOR BACKWARD COMPATIBILITY ----------------
+/// These views provide backward compatibility during the migration phase
+/// They map the new Employee-centric models to the old Guard-centric interfaces
+
+// View to map Employees with GUARD classification back to Guard interface
+// This is a conceptual view - actual implementation would be in database
+// CREATE OR REPLACE VIEW hr.guard_view AS
+// SELECT 
+//   id,
+//   company_id,
+//   employee_no,
+//   last_name,
+//   first_name,
+//   middle_name,
+//   hire_date,
+//   employment_status as status,
+//   created_at,
+//   updated_at
+// FROM hr.employee
+// WHERE classification = 'GUARD';
+
+// View to map EmployeeLoan back to GuardLoan for guards
+// CREATE OR REPLACE VIEW benefits.guard_loan_view AS
+// SELECT 
+//   el.*
+// FROM benefits.employee_loan el
+// JOIN hr.employee e ON el.employee_id = e.id
+// WHERE e.classification = 'GUARD';
+
+// Similar views would be created for:
+// - guard_allowance_view -> employee_allowance
+// - guard_deduction_view -> employee_deduction  
+// - guard_sss_view -> employee_gov_contribution (type='SSS')
+// - guard_philhealth_view -> employee_gov_contribution (type='PHILHEALTH')
+// - guard_hdmf_view -> employee_gov_contribution (type='PAGIBIG')
+// Employee Government Contribution Models
+// These models mirror the Guard contribution models but for all employees
+// Allows flexibility to waive contributions when needed
+
+// ==================== EMPLOYEE GOVERNMENT CONTRIBUTION RECORDS ====================
+
+// Employee SSS Information
+model EmployeeSSS {
+  id             String   @id @default(uuid())
+  company_id     String
+  employee_id    String // References Employee or Guard
+  sss_no         String
+  monthly_salary Decimal? @db.Decimal(14, 2) // Base for calculation
+  status         String   @default("ACTIVE")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([company_id, sss_no])
+  @@unique([company_id, employee_id])
+  @@index([employee_id])
+  @@schema("benefits")
+}
+
+// Employee PhilHealth Information
+model EmployeePhilHealth {
+  id             String   @id @default(uuid())
+  company_id     String
+  employee_id    String
+  philhealth_no  String
+  monthly_salary Decimal? @db.Decimal(14, 2) // Base for calculation
+  status         String   @default("ACTIVE")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([company_id, philhealth_no])
+  @@unique([company_id, employee_id])
+  @@index([employee_id])
+  @@schema("benefits")
+}
+
+// Employee HDMF/Pag-IBIG Information
+model EmployeeHDMF {
+  id             String   @id @default(uuid())
+  company_id     String
+  employee_id    String
+  hdmf_no        String
+  monthly_salary Decimal? @db.Decimal(14, 2) // Base for calculation
+  status         String   @default("ACTIVE")
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([company_id, hdmf_no])
+  @@unique([company_id, employee_id])
+  @@index([employee_id])
+  @@schema("benefits")
+}
+
+// Employee Tax Information
+model EmployeeTax {
+  id               String   @id @default(uuid())
+  company_id       String
+  employee_id      String
+  tin              String // Tax Identification Number
+  rdo_code         String? // Revenue District Office code
+  tax_code         String? // Tax code (S, ME, etc.)
+  exemption_status String? // Number of qualified dependents
+  status           String   @default("ACTIVE")
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@unique([company_id, tin])
+  @@unique([company_id, employee_id])
+  @@index([employee_id])
+  @@schema("benefits")
+}
+
+// ==================== EMPLOYEE CONTRIBUTION SCHEDULES ====================
+
+// Employee SSS Schedule (typically for period B - 16-30/31)
+model EmployeeSSSSchedule {
+  id              String    @id @default(uuid())
+  company_id      String
+  employee_sss_id String // Reference to EmployeeSSS
+  pay_period_id   String
+  gross_income    Decimal   @db.Decimal(14, 2) // Basis for calculation
+  ee_amount       Decimal   @db.Decimal(14, 2) // Employee share
+  er_amount       Decimal   @db.Decimal(14, 2) // Employer share
+  ec_amount       Decimal   @default(10) @db.Decimal(14, 2) // EC contribution
+  status          String    @default("PENDING") // PENDING, WAIVED, PROCESSED, RESCHEDULED
+  waived_reason   String? // Reason for waiving (e.g., "Low net pay", "On leave")
+  rescheduled_to  String? // Pay period ID if rescheduled
+  processed_at    DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@unique([company_id, employee_sss_id, pay_period_id])
+  @@index([employee_sss_id, status])
+  @@index([pay_period_id, status])
+  @@schema("benefits")
+}
+
+// Employee PhilHealth Schedule (typically for period B - 16-30/31)
+model EmployeePhilHealthSchedule {
+  id                     String    @id @default(uuid())
+  company_id             String
+  employee_philhealth_id String // Reference to EmployeePhilHealth
+  pay_period_id          String
+  gross_income           Decimal   @db.Decimal(14, 2) // Basis for calculation
+  ee_amount              Decimal   @db.Decimal(14, 2) // Employee share (usually 2.25%)
+  er_amount              Decimal   @db.Decimal(14, 2) // Employer share (usually 2.25%)
+  status                 String    @default("PENDING")
+  waived_reason          String?
+  rescheduled_to         String?
+  processed_at           DateTime?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  @@unique([company_id, employee_philhealth_id, pay_period_id])
+  @@index([employee_philhealth_id, status])
+  @@index([pay_period_id, status])
+  @@schema("benefits")
+}
+
+// Employee HDMF Schedule (typically for period A - 1-15)
+model EmployeeHDMFSchedule {
+  id               String    @id @default(uuid())
+  company_id       String
+  employee_hdmf_id String // Reference to EmployeeHDMF
+  pay_period_id    String
+  gross_income     Decimal   @db.Decimal(14, 2) // Basis for calculation
+  ee_amount        Decimal   @db.Decimal(14, 2) // Employee share (1% or 2%)
+  er_amount        Decimal   @db.Decimal(14, 2) // Employer share (2%)
+  status           String    @default("PENDING")
+  waived_reason    String?
+  rescheduled_to   String?
+  processed_at     DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  @@unique([company_id, employee_hdmf_id, pay_period_id])
+  @@index([employee_hdmf_id, status])
+  @@index([pay_period_id, status])
+  @@schema("benefits")
+}
+
+// Employee Tax Schedule (typically for period B - 16-30/31)
+model EmployeeTaxSchedule {
+  id                String    @id @default(uuid())
+  company_id        String
+  employee_tax_id   String // Reference to EmployeeTax
+  pay_period_id     String
+  period_type       String // DAILY, WEEKLY, SEMI_MONTHLY, MONTHLY
+  gross_income      Decimal   @db.Decimal(14, 2)
+  taxable_income    Decimal   @db.Decimal(14, 2) // After statutory deductions
+  tax_bracket       Int       @default(1)
+  fixed_tax         Decimal   @default(0) @db.Decimal(14, 2)
+  tax_on_excess     Decimal   @default(0) @db.Decimal(14, 2)
+  total_withholding Decimal   @db.Decimal(14, 2)
+  status            String    @default("PENDING")
+  waived_reason     String?
+  rescheduled_to    String?
+  processed_at      DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@unique([company_id, employee_tax_id, pay_period_id])
+  @@index([employee_tax_id, status])
+  @@index([pay_period_id, status])
+  @@schema("benefits")
+}
+
+/////xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/////
+///////////////////// Remove these later ///////////////////////
+/////xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/////
+
+model Guard {
+  id          String    @id @default(uuid())
+  company_id  String
+  employee_no String
+  last_name   String
+  first_name  String
+  middle_name String?
+  hire_date   DateTime?
+  status      String
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@unique([company_id, employee_no])
+  @@index([company_id, status])
+  @@schema("hr")
+}
+
+model GuardLoan {
+  id                  String   @id @default(uuid())
+  company_id          String
+  guard_id            String
+  loan_type_id        String
+  principal_amount    Decimal  @db.Decimal(14, 2)
+  installment_count   Int
+  start_pay_period_id String
+  status              String
+  created_at          DateTime @default(now())
+
+  @@index([company_id, guard_id])
+  @@schema("benefits")
+}
+
+model GuardAllowance {
+  id                  String   @id @default(uuid())
+  company_id          String
+  guard_id            String
+  allowance_type_id   String
+  total_amount        Decimal? @db.Decimal(14, 2)
+  per_period_amount   Decimal? @db.Decimal(14, 2)
+  start_pay_period_id String
+  status              String
+  created_at          DateTime @default(now())
+
+  @@index([company_id, guard_id])
+  @@schema("benefits")
+}
+
+model GuardDeduction {
+  id                  String   @id @default(uuid())
+  company_id          String
+  guard_id            String
+  deduction_type_id   String
+  total_amount        Decimal? @db.Decimal(14, 2)
+  per_period_amount   Decimal? @db.Decimal(14, 2)
+  start_pay_period_id String
+  status              String
+  created_at          DateTime @default(now())
+
+  @@index([company_id, guard_id])
+  @@schema("benefits")
+}
+
+model GuardSSS {
+  id         String @id @default(uuid())
+  company_id String
+  guard_id   String
+  sss_no     String
+  status     String
+
+  @@unique([company_id, sss_no])
+  @@schema("benefits")
+}
+
+model GuardPhilHealth {
+  id            String @id @default(uuid())
+  company_id    String
+  guard_id      String
+  philhealth_no String
+  status        String
+
+  @@unique([company_id, philhealth_no])
+  @@schema("benefits")
+}
+
+model GuardHDMF {
+  id         String @id @default(uuid())
+  company_id String
+  guard_id   String
+  hdmf_no    String
+  status     String
+
+  @@unique([company_id, hdmf_no])
+  @@schema("benefits")
+}
+
+model GuardTax {
+  id               String   @id @default(uuid())
+  company_id       String
+  guard_id         String
+  tin              String // Tax Identification Number
+  rdo_code         String? // Revenue District Office code
+  tax_code         String? // Tax code (S, ME, etc.)
+  exemption_status String? // Number of qualified dependents
+  status           String   @default("ACTIVE")
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@unique([company_id, tin])
+  @@unique([company_id, guard_id])
+  @@index([guard_id])
+  @@schema("benefits")
+}
+
+model GuardLoanSchedule {
+  id               String    @id @default(uuid())
+  company_id       String
+  guard_loan_id    String
+  pay_period_id    String
+  amount           Decimal   @db.Decimal(14, 2)
+  status           String
+  processed_at     DateTime?
+  last_approval_id String?
+
+  @@unique([company_id, guard_loan_id, pay_period_id])
+  @@schema("benefits")
+}
+
+model GuardAllowanceSchedule {
+  id                 String    @id @default(uuid())
+  company_id         String
+  guard_allowance_id String
+  pay_period_id      String
+  amount             Decimal   @db.Decimal(14, 2)
+  status             String
+  processed_at       DateTime?
+
+  @@unique([company_id, guard_allowance_id, pay_period_id])
+  @@schema("benefits")
+}
+
+model GuardDeductionSchedule {
+  id                 String    @id @default(uuid())
+  company_id         String
+  guard_deduction_id String
+  pay_period_id      String
+  amount             Decimal   @db.Decimal(14, 2)
+  status             String
+  processed_at       DateTime?
+
+  @@unique([company_id, guard_deduction_id, pay_period_id])
+  @@schema("benefits")
+}
+
+model GuardSSSSchedule {
+  id            String    @id @default(uuid())
+  company_id    String
+  guard_sss_id  String
+  pay_period_id String
+  ee_amount     Decimal   @db.Decimal(14, 2)
+  er_amount     Decimal   @db.Decimal(14, 2)
+  status        String
+  processed_at  DateTime?
+
+  @@unique([company_id, guard_sss_id, pay_period_id])
+  @@schema("benefits")
+}
+
+model GuardPhilHealthSchedule {
+  id                  String    @id @default(uuid())
+  company_id          String
+  guard_philhealth_id String
+  pay_period_id       String
+  ee_amount           Decimal   @db.Decimal(14, 2)
+  er_amount           Decimal   @db.Decimal(14, 2)
+  status              String
+  processed_at        DateTime?
+
+  @@unique([company_id, guard_philhealth_id, pay_period_id])
+  @@schema("benefits")
+}
+
+model GuardHDMFSchedule {
+  id             String    @id @default(uuid())
+  company_id     String
+  guard_id       String
+  pay_period_id  String
+  base_amount    Decimal?  @db.Decimal(14, 2)
+  ee_amount      Decimal   @db.Decimal(14, 2)
+  er_amount      Decimal   @db.Decimal(14, 2)
+  status         String
+  waived_reason  String?
+  rescheduled_to String?
+  processed_at   DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@unique([company_id, guard_id, pay_period_id])
+  @@index([guard_id, status])
+  @@index([pay_period_id, status])
+  @@schema("benefits")
+}
+
+model GuardTaxSchedule {
+  id                String    @id @default(uuid())
+  company_id        String
+  guard_tax_id      String // Reference to GuardTax
+  pay_period_id     String
+  period_type       String // DAILY, WEEKLY, SEMI_MONTHLY, MONTHLY
+  gross_income      Decimal   @db.Decimal(14, 2)
+  taxable_income    Decimal   @db.Decimal(14, 2) // After statutory deductions
+  tax_bracket       Int       @default(1)
+  fixed_tax         Decimal   @default(0) @db.Decimal(14, 2)
+  tax_on_excess     Decimal   @default(0) @db.Decimal(14, 2)
+  total_withholding Decimal   @db.Decimal(14, 2)
+  status            String    @default("PENDING")
+  processed_at      DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@unique([company_id, guard_tax_id, pay_period_id])
+  @@index([guard_tax_id, status])
+  @@index([pay_period_id, status])
+  @@schema("benefits")
+}
+
+model Paysheet {
+  id                String   @id @default(uuid())
+  company_id        String
+  pay_period_id     String
+  guard_id          String
+  timesheet_ids     String[]
+  hours_8h          Decimal  @db.Decimal(8, 2)
+  hours_ot          Decimal  @db.Decimal(8, 2)
+  hours_night       Decimal  @db.Decimal(8, 2)
+  amount_8h         Decimal  @db.Decimal(14, 2)
+  amount_ot         Decimal  @db.Decimal(14, 2)
+  amount_night      Decimal  @db.Decimal(14, 2)
+  allowances_amount Decimal  @default(0) @db.Decimal(14, 2)
+  loans_amount      Decimal  @default(0) @db.Decimal(14, 2)
+  deductions_amount Decimal  @default(0) @db.Decimal(14, 2)
+  sss_ee            Decimal  @default(0) @db.Decimal(14, 2)
+  sss_er            Decimal  @default(0) @db.Decimal(14, 2)
+  philhealth_ee     Decimal  @default(0) @db.Decimal(14, 2)
+  philhealth_er     Decimal  @default(0) @db.Decimal(14, 2)
+  hdmf_ee           Decimal  @default(0) @db.Decimal(14, 2)
+  hdmf_er           Decimal  @default(0) @db.Decimal(14, 2)
+  lwop_amount       Decimal  @default(0) @db.Decimal(14, 2)
+  absences_amount   Decimal  @default(0) @db.Decimal(14, 2)
+  gross_pay         Decimal  @db.Decimal(14, 2)
+  net_pay           Decimal  @db.Decimal(14, 2)
+  status            String
+  created_at        DateTime @default(now())
+
+  @@unique([company_id, pay_period_id, guard_id])
+  @@schema("payroll")
+}
+
+model Timesheet {
+  id                       String   @id @default(uuid())
+  company_id               String
+  pay_period_id            String
+  guard_id                 String
+  dtr_ids                  String[]
+  total_hours_8h           Decimal  @default(0.00) @db.Decimal(8, 2)
+  total_hours_ot           Decimal  @default(0.00) @db.Decimal(8, 2)
+  total_hours_night        Decimal  @default(0.00) @db.Decimal(8, 2)
+  contract_rate_version_id String?
+  status                   String
+  created_at               DateTime @default(now())
+  last_approval_id         String?
+
+  @@unique([company_id, pay_period_id, guard_id])
+  @@schema("timekeeper")
+}
+
+model Assignment {
+  id             String    @id @default(uuid())
+  company_id     String
+  guard_id       String
+  location_id    String
+  position_id    String
+  shift_id       String
+  effective_from DateTime
+  effective_to   DateTime?
+
+  @@index([company_id, guard_id, effective_from])
+  @@schema("hr")
+}
+
+// ==================== NOTES ====================
+// Schedule Patterns:
+// - HDMF: Usually deducted on period A (1-15)
+// - SSS: Usually deducted on period B (16-30/31)
+// - PhilHealth: Usually deducted on period B (16-30/31)
+// - Tax: Usually deducted on period B (16-30/31) for semi-monthly
+//
+// Waiving Contributions:
+// - Set status to "WAIVED" with waived_reason
+// - Common reasons: "Low net pay", "On leave", "Minimum wage earner", "Probationary"
+// - Can reschedule to future period by setting rescheduled_to
+//
+// Status Values:
+// - PENDING: Scheduled but not yet processed
+// - PROCESSED: Successfully deducted in payroll
+// - WAIVED: Skipped for this period with reason
+// - RESCHEDULED: Moved to different period
+// - CANCELLED: Permanently cancelled

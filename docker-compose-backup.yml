@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  db-backup:
+    image: postgres:15.5
+    container_name: epicstack-db-backup-5435
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: epic_backup_user
+      POSTGRES_PASSWORD: epic_backup_pass
+      POSTGRES_DB: epic_backup_db
+    ports:
+      - '5435:5432' # host:container (5435 for your backup database)
+    volumes:
+      - epicstack_backup_pgdata_5435:/var/lib/postgresql/data
+      - ./backup-files:/backup # Mount a local directory for easy backup file access
+    networks:
+      - epicstack-backup-network
+
+networks:
+  epicstack-backup-network:
+    driver: bridge
+    name: epicstack-backup-net
+
+volumes:
+  epicstack_backup_pgdata_5435:
+    name: epicstack_backup_volume_5435

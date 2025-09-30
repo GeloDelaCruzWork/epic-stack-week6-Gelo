@@ -1,0 +1,9 @@
+{
+	"extensions": ["js"],
+	"spec": "tests/selenium/dist/specs/**/*.test.js",
+	"timeout": 30000,
+	"reporter": "spec",
+	"colors": true,
+	"bail": false,
+	"exit": true
+}

@@ -1,0 +1,261 @@
+/* Payslip Print Styles - A4 Layout with 2 slips per page */
+
+/* A4 portrait with controlled margins */
+@page {
+	size: A4;
+	margin: 10mm;
+}
+
+/* Print-specific styles */
+@media print {
+	html,
+	body {
+		height: auto;
+		margin: 0;
+		padding: 0;
+	}
+
+	/* Hide everything except payslip content */
+	.no-print {
+		display: none !important;
+	}
+
+	/* Each physical page contains two slips stacked vertically */
+	.payslip-sheet {
+		page-break-after: always;
+		page-break-inside: avoid;
+		height: 277mm; /* A4 height minus margins */
+		display: grid;
+		grid-template-rows: 1fr 1fr;
+		gap: 8mm; /* Space between the two slips */
+	}
+
+	/* Last sheet should not have page break */
+	.payslip-sheet:last-child {
+		page-break-after: auto;
+	}
+
+	.payslip {
+		/* Thin border helps cutting; keep fonts small to fit */
+		font-size: 9px;
+		border: 1px solid #000;
+		padding: 4mm;
+		position: relative;
+		overflow: hidden;
+		background: white;
+	}
+
+	/* Ensure tables and content fit */
+	.payslip table {
+		font-size: inherit;
+		width: 100%;
+	}
+
+	/* Compact spacing for print */
+	.payslip h1 {
+		font-size: 12px;
+		margin: 0 0 2mm;
+	}
+
+	.payslip h2 {
+		font-size: 10px;
+		margin: 2mm 0 1mm;
+	}
+
+	.payslip p,
+	.payslip td,
+	.payslip th {
+		margin: 0;
+		padding: 0.5mm 1mm;
+	}
+}
+
+/* Screen preview styles */
+@media screen {
+	.payslip-preview-container {
+		background: #f5f5f5;
+		padding: 20px;
+		min-height: 100vh;
+	}
+
+	.payslip-preview {
+		width: 210mm; /* A4 width */
+		margin: 0 auto;
+		background: white;
+		box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+	}
+
+	.payslip-sheet {
+		min-height: 297mm; /* A4 height */
+		padding: 10mm;
+		display: grid;
+		grid-template-rows: 1fr 1fr;
+		gap: 8mm;
+		border-bottom: 1px dashed #ddd;
+	}
+
+	.payslip-sheet:last-child {
+		border-bottom: none;
+	}
+
+	.payslip {
+		border: 1px solid #ccc;
+		padding: 6mm;
+		background: white;
+		overflow: hidden;
+	}
+}
+
+/* Common payslip styles */
+.payslip-header {
+	border-bottom: 1px solid #333;
+	padding-bottom: 1.5mm;
+	margin-bottom: 2mm;
+}
+
+.payslip-company-name {
+	font-size: 13px;
+	font-weight: bold;
+	margin: 0;
+}
+
+.payslip-title {
+	font-size: 11px;
+	text-align: center;
+	margin: 1mm 0;
+	text-transform: uppercase;
+}
+
+.payslip-employee-info {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 1mm;
+	margin-bottom: 2mm;
+}
+
+.payslip-info-item {
+	display: flex;
+	font-size: 8px;
+}
+
+.payslip-info-label {
+	font-weight: bold;
+	min-width: 60px;
+}
+
+.payslip-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 1mm 0;
+}
+
+.payslip-table th {
+	background: #f0f0f0;
+	font-weight: bold;
+	text-align: left;
+	padding: 0.5mm 1mm;
+	font-size: 8px;
+	border: 1px solid #ddd;
+}
+
+.payslip-table td {
+	padding: 0.5mm 1mm;
+	border: 1px solid #ddd;
+	font-size: 8px;
+}
+
+.payslip-table .amount {
+	text-align: right;
+	font-family: 'Courier New', monospace;
+}
+
+.payslip-section {
+	margin: 1.5mm 0;
+}
+
+.payslip-section-title {
+	font-size: 9px;
+	font-weight: bold;
+	margin-bottom: 0.5mm;
+	padding: 0.5mm;
+	background: #f8f8f8;
+	border-left: 2px solid #333;
+}
+
+.payslip-totals {
+	margin-top: 2mm;
+	border-top: 1px solid #333;
+	padding-top: 1mm;
+}
+
+.payslip-total-row {
+	display: flex;
+	justify-content: space-between;
+	padding: 0.5mm 0;
+	font-size: 9px;
+}
+
+.payslip-total-row.grand-total {
+	font-size: 10px;
+	font-weight: bold;
+	border-top: 1px solid #333;
+	margin-top: 1mm;
+	padding-top: 1mm;
+}
+
+.payslip-footer {
+	margin-top: 2mm;
+	padding-top: 1.5mm;
+	border-top: 1px solid #ccc;
+	font-size: 7px;
+	color: #666;
+}
+
+.payslip-signatures {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 5mm;
+	margin-top: 2mm;
+}
+
+.payslip-signature-block {
+	text-align: center;
+}
+
+.payslip-signature-line {
+	border-bottom: 1px solid #333;
+	margin-bottom: 0.5mm;
+	min-height: 8mm;
+}
+
+.payslip-signature-label {
+	font-size: 7px;
+	color: #666;
+}
+
+.payslip-qr-code {
+	position: absolute;
+	bottom: 4mm;
+	right: 4mm;
+	width: 15mm;
+	height: 15mm;
+}
+
+/* Watermark styles */
+.payslip-watermark {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%) rotate(-45deg);
+	font-size: 40px;
+	font-weight: bold;
+	opacity: 0.1;
+	z-index: 0;
+	pointer-events: none;
+	text-transform: uppercase;
+}
+
+.payslip-content {
+	position: relative;
+	z-index: 1;
+}

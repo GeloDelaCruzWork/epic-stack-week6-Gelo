@@ -1,0 +1,67 @@
+flowchart TD %%
+====================================================================== %% MASTER
+FLOW v3: Billing Track (no biometrics) vs Payroll Track (biometric-optional) %%
+====================================================================== %%
+--------------------------- SETUP ----------------------------------- subgraph
+H[Contract & Masters] H1[[Holiday Catalog (billable flags)]]
+H2[[Guard Bank Master (PNB) & E-Wallet Status]]
+H3[[Guard Restrictions / Do-Not-Assign]]
+H4[[Overhead Payroll Rules (tax tables, allowance taxability)]] end %%
+------------------ PHASE 1: SCHEDULE PLANNING ----------------------- subgraph
+P[Pre-Period: Work Schedule Planning & Approval] direction TB
+P0[[Pay Period (15 days) | 13-day cap]]
+P1[[Ports & Shift Templates<br/>12h (6–18/18–6), 14h (6–20), 8h (6–15 / 15–23)]]
+P2([Draft per Port/Day/Shift<br/>Primary + Reliever in one view]) P3{Validations
+OK?<br/>cap, double-book, DNA, holidays, bank/e-wallet presence} P4([Fix
+issues]) P5([Internal review (Ops)]) P6([Submit to Client (UP)]) P7{Approved?}
+P8([Version & Lock "Approved vN"]) end H1 --> P2 H3 --> P3 H2 --> P3 P0 --> P2
+P1 --> P2 P2 --> P3 P3 -- "No" --> P4 --> P2 P3 -- "Yes" --> P5 --> P6 --> P7 P7
+-- "No" --> P4 P7 -- "Yes" --> P8 %% ------------- PHASE 2: EXECUTION / CAPTURE
+OF ACTUALS --------------- subgraph E[During Period: Capture Actuals] direction
+TB %% Billing evidence path (client-facing)
+E1[[Paper Logbook at Agency Office<br/>(formation at ~06:00 & ~18:00)]]
+E2[[Actuals Spreadsheet<br/>(digitized from logbook)]] %% Payroll evidence path
+(agency-facing, optional) subgraph BIO[Biometric (optional, payroll only)]
+direction TB B1([Clock-in at formation device<br/>(office or port)])
+B2([Clock-out at shift end<br/>Grace window e.g., 30–45 min]) B3{Clock-out
+missing?} B4[[Alert Ops (site OIC/logistics)]] B5([End-of-day exception
+list<br/>hold in payroll until resolved]) end end P8 --> E1 E1 --> E2 B1 --> B2
+--> B3 B3 -- "Yes" --> B4 --> B5 B3 -- "No" --> BIO %% ------------- PHASE 3:
+RECONCILIATION (SCHEDULE v ACTUALS) ---------- subgraph R[Reconciliation
+(Schedule v Actuals)] direction TB R0([Join Approved Schedule vN
+with<br/>Actuals Spreadsheet (date/port/shift)]) R1{Same detachment?} R2{Same
+shift?} R3[[OK]] R4[[FYI: Shift differs (document only)]]
+R5[[RED: Detachment mismatch / Unauthorized reliever / DNA]] R6([Exceptions &
+reasons → Ops resolution]) end E2 --> R0 P8 --> R0 R0 --> R1 R1 -- "No" --> R5
+--> R6 --> R0 R1 -- "Yes" --> R2 R2 -- "No" --> R4 --> R6 R2 -- "Yes" --> R3 H3
+--> R0 %% ---------------- PHASE 4a: BILLING (client-facing) ------------------
+subgraph BIL[Billing Track (uses schedule + DTR; no biometrics)] direction TB
+B1([Generate DTR lines per guard/day<br/>normalized 8/12/14 per contract rules])
+B2([DTR approvals: 2 Agency + 2 UP]) B3([Client-facing DTR Summary<br/>(clean
+hours; holiday billing rules)]) B4([Invoice UP]) end R3 --> B1 R4 --> B1 R5 -->
+B1 B1 --> B2 --> B3 --> B4 %% --------------- PHASE 4b: PAYROLL (agency-facing)
+------------------- subgraph PAY[Payroll Track (may use biometric)] direction TB
+PYA([Timesheets (Σ Reg/OT/ND/Hol hours)]) PYB([Gross = Σ hours × rate])
+PYC([Additions (allowances/approved adj.)]) PYD([Employee deductions:
+SSS/PhilHealth/Pag-IBIG (EE), tax, loans, penalties]) PYE([Employer costs:
+SSS/PhilHealth/Pag-IBIG (ER) → liability]) PYF([Net Pay]) PYG{Payroll ≤
+Billing?} PYH([Variance review (non-billable hol., unresolved REDs)]) end
+TAP[Reconcile biometrics to timesheets (if enabled)]:::note classDef note
+fill:#eef7ff,stroke:#99c,stroke-width:1px; E2 --> PYA BIO --> TAP --> PYA PYA
+--> PYB --> PYC --> PYD --> PYE --> PYF --> PYG PYG -- "No" --> PYH --> PYB PYG
+-- "Yes" --> DIS %% ----------------- PHASE 5: DISBURSEMENT & RECON
+--------------------- subgraph DIS[Disbursement & Reconciliation] direction TB
+D0([Register ~400 rows: Guard, Net, Pay Method (PNB/GCash)]) D1{Pay Method?} %%
+PNB lane subgraph PNB[PNB Bulk Credit] direction TB N1{PNB acct valid?} N2([PNB
+file + dual control]) N3([Upload 14:00–16:30]) N4([ACK + Result file]) N5{All
+credits ok?} N6([Mark Paid (PNB)]) N7([PNB Exceptions Queue]) end %% GCash lane
+(temporary only) subgraph EW[GCash E-Wallet] direction TB W1([GCash list + dual
+control]) W2([Submit via portal/API]) W3([ACK + Result]) W4{All transfers ok?}
+W5([Mark Paid (GCash)]) W6([GCash Exceptions Queue]) W7{Periods_on_ewallet > cap
+(1–2)?} W8[[BLOCK next payroll for guard<br/>until PNB acct created]] W9([Notify
+Ops/HR for bank follow-up]) end D2([Final Recon: PNB paid + GCash paid = payroll
+total]) D3([Master Exceptions: PNB rejects + GCash rejects]) end PYG --> D0 -->
+D1 D1 -- "PNB" --> N1 N1 -- "No" --> W1 N1 -- "Yes" --> N2 --> N3 --> N4 --> N5
+N5 -- "Yes" --> N6 --> D2 N5 -- "No" --> N7 --> D3 D1 -- "GCash" --> W1 --> W2
+--> W3 --> W4 W4 -- "Yes" --> W5 --> W7 W4 -- "No" --> W6 --> W9 --> W7 W7 --
+"Yes" --> W8 --> D3 W7 -- "No" --> D2
